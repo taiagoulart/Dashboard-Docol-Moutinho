@@ -430,7 +430,7 @@
       <div id="errorState" style="display:none" class="empty-card">
         <div class="e-title">Não foi possível carregar os dados agora</div>
         <div class="e-sub" id="errorMsg">Verifique a conexão ou tente novamente em instantes.</div>
-        <button onclick="loadAll()">Tentar novamente</button>
+        <button onclick="loadAll(false)">Tentar novamente</button>
       </div>
 
       <div id="appContent" style="display:none">
@@ -556,7 +556,7 @@
 
       <footer class="brand-foot">
         <img src="" id="footLogo" alt="Moutinho">
-        <span>Moutinho Materiais · Elétrica · Hidráulica · Desde 1984</span>
+        <span>Moutinho Materiais · Elétrica · Hidráulica · Desde 1984<span id="readInfo"></span></span>
       </footer>
     </div>
   </main>
@@ -738,7 +738,9 @@ async function fetchWithTimeout(url, ms) {
     return await res.text();
   } catch (e) { clearTimeout(id); throw e; }
 }
-async function fetchCSVResilient(url) {
+async function fetchCSVResilient(rawUrl) {
+  // parâmetro único a cada leitura: impede que navegador/proxy entreguem uma versão antiga da planilha
+  const url = rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
   const attempts = [
     () => fetchWithTimeout(url, 10000),
     () => fetchWithTimeout('https://corsproxy.io/?' + encodeURIComponent(url), 10000),
@@ -780,21 +782,26 @@ const CAMPAIGN_DAYS = Math.round((CAMPAIGN_END - CAMPAIGN_START) / DAY);
 
 /* ====================== Load ====================== */
 const IS_DEMO = !/^https?:\/\//.test(CSV_URL_RESUMO);
-async function loadAll() {
-  document.getElementById('loadState').style.display = 'flex';
-  document.getElementById('errorState').style.display = 'none';
-  document.getElementById('appContent').style.display = 'none';
+async function loadAll(silent) {
+  if (!silent) {
+    document.getElementById('loadState').style.display = 'flex';
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('appContent').style.display = 'none';
+  }
   try {
     const txt = IS_DEMO ? DEMO_CSV : await fetchCSVResilient(CSV_URL_RESUMO);
     if (IS_DEMO) document.getElementById('demoBanner').style.display = 'flex';
     const parsed = parseResumo(parseCSV(txt));
     if (!parsed.vendors.length) throw new Error('Nenhum vendedor encontrado na planilha.');
-    STATE = { ...parsed, selected: null };
+    STATE = { ...parsed, selected: silent ? STATE.selected : null };
+    const now = new Date();
+    document.getElementById('readInfo').textContent = ' · Planilha lida às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     document.getElementById('loadState').style.display = 'none';
     document.getElementById('appContent').style.display = 'block';
     renderAll();
   } catch (e) {
     console.error(e);
+    if (silent) return; // falha na atualização automática: mantém os dados já exibidos
     document.getElementById('loadState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorMsg').textContent = 'Detalhe técnico: ' + (e && e.message ? e.message : e);
@@ -1046,6 +1053,7 @@ const ACCESS_KEY = "docolAccessOk";
 function unlock() {
   document.getElementById('lockScreen').classList.add('hidden');
   loadAll();
+  if (!IS_DEMO) setInterval(() => loadAll(true), 5 * 60 * 1000); // relê a planilha a cada 5 minutos
 }
 function initLock() {
   document.getElementById('lockLogo').src = IMAGES.logo;
